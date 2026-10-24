@@ -54,7 +54,7 @@ function router() {
 addEventListener('hashchange', router);
 router();
 
-function setTitle(t) { titleEl.textContent = t; document.title = t === 'Venues' ? 'Crema' : `${t} · Crema`; }
+function setTitle(t) { titleEl.textContent = t; document.title = t === 'Venues' ? 'The Cheers' : `${t} · The Cheers`; }
 function currency() { return store.state.settings.currency || '$'; }
 
 // ---------- shared fragments ----------
@@ -748,12 +748,12 @@ function renderSettings() {
       <p><strong>50 ml</strong> vodka · <strong>30 ml</strong> fresh espresso · <strong>20 ml</strong> coffee liqueur · <strong>10 ml</strong> sugar syrup.</p>
       <p style="margin:0">Shake hard with plenty of ice for 15–20 seconds, double-strain into a chilled coupe, garnish with three coffee beans (health, wealth, happiness).</p>
     </div>
-    <p class="muted small" style="text-align:center;margin-top:20px">Crema · map data © OpenStreetMap contributors</p>`;
+    <p class="muted small" style="text-align:center;margin-top:20px">The Cheers · map data © OpenStreetMap contributors</p>`;
 
   qs('#theme').value = s.theme || 'auto';
   qs('#theme').addEventListener('change', (e) => store.setSetting('theme', e.target.value));
   qs('#currency').addEventListener('change', (e) => store.setSetting('currency', e.target.value.trim() || '$'));
-  qs('#export').addEventListener('click', () => download(`crema-backup-${todayISO()}.json`, store.exportJSON()));
+  qs('#export').addEventListener('click', () => download(`the-cheers-backup-${todayISO()}.json`, store.exportJSON()));
   let mode = 'merge';
   qsa('[data-mode]').forEach((b) => b.addEventListener('click', () => { mode = b.dataset.mode; qsa('[data-mode]').forEach((x) => x.classList.toggle('is-on', x === b)); }));
   qs('#import').addEventListener('change', async (e) => {

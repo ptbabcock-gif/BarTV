@@ -1,4 +1,4 @@
-# Crema — design notes
+# The Cheers — design notes
 
 ## Who it is for
 

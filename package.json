@@ -1,7 +1,7 @@
 {
-  "name": "crema",
+  "name": "the-cheers",
   "version": "1.0.0",
-  "description": "Crema — rate, map and remember every espresso martini. Offline-first PWA, no build step.",
+  "description": "The Cheers — rate, map and remember every espresso martini. Offline-first PWA, no build step.",
   "type": "module",
   "private": true,
   "scripts": {

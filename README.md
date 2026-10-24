@@ -1,6 +1,6 @@
-# Crema — espresso martini ratings
+# The Cheers — espresso martini ratings
 
-Crema is a mobile-first web app for rating espresso martinis at bars and restaurants.
+The Cheers is a mobile-first web app for rating espresso martinis at bars and restaurants.
 Log each drink against a five-part rubric, record what went into the glass, pin the
 venue on a map, and let the leaderboard, history and stats tell you where to go next.
 

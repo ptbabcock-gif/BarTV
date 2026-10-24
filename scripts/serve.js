@@ -42,5 +42,5 @@ createServer((req, res) => {
   });
   createReadStream(filePath).pipe(res);
 }).listen(port, () => {
-  console.log(`Crema is running at http://localhost:${port}/`);
+  console.log(`The Cheers is running at http://localhost:${port}/`);
 });

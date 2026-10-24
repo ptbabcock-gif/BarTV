@@ -74,7 +74,7 @@ export function sanitizeTasting(t = {}) {
 
 /** Validate & coerce an arbitrary object into a state. Throws on garbage. */
 export function sanitizeState(raw) {
-  if (!raw || typeof raw !== 'object') throw new Error('Not a Crema data file');
+  if (!raw || typeof raw !== 'object') throw new Error('Not a backup file from The Cheers');
   if (!Array.isArray(raw.venues) || !Array.isArray(raw.tastings)) throw new Error('Missing venues or tastings');
   const venues = raw.venues.map(sanitizeVenue).filter((v) => v.name);
   const ids = new Set(venues.map((v) => v.id));
@@ -172,7 +172,7 @@ export function createStore(storage, key = STORAGE_KEY) {
 
     // ----- bulk -----
     exportJSON() {
-      return JSON.stringify({ app: 'crema', exportedAt: new Date().toISOString(), ...state }, null, 2);
+      return JSON.stringify({ app: 'the-cheers', exportedAt: new Date().toISOString(), ...state }, null, 2);
     },
     /** mode: 'replace' | 'merge'. Merge keeps existing records and adds unknown ids. */
     importJSON(text, mode = 'merge') {

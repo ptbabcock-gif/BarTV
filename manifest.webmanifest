@@ -1,6 +1,6 @@
 {
-  "name": "Crema — Espresso Martini Ratings",
-  "short_name": "Crema",
+  "name": "The Cheers — Espresso Martini Ratings",
+  "short_name": "The Cheers",
   "description": "Rate, map and remember every espresso martini.",
   "start_url": "./index.html",
   "scope": "./",

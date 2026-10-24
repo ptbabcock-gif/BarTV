@@ -1,6 +1,6 @@
 // Offline app shell. Same-origin assets are cached on install and served cache-first;
 // map tiles and place search are always fetched from the network.
-const VERSION = 'crema-v1';
+const VERSION = 'the-cheers-v2';
 const SHELL = [
   './', './index.html', './styles.css', './manifest.webmanifest',
   './src/app.js', './src/store.js', './src/scoring.js', './src/ingredients.js', './src/geo.js',

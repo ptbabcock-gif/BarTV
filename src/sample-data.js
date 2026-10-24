@@ -1,4 +1,4 @@
-// Demo data so a new user can see what a filled-in Crema looks like. All ratings are fictional.
+// Demo data so a new user can see what The Cheers looks like once filled in. All ratings are fictional.
 export function sampleState() {
   const v = (id, name, city, address, lat, lng) => ({ id, name, city, address, lat, lng });
   const t = (id, venueId, date, price, scores, ingredients, notes, wouldOrderAgain) =>
