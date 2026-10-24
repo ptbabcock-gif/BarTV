@@ -1,4 +1,4 @@
-import { createStore, todayISO } from './store.js';
+import { createStore, todayISO, MAX_VENUE_PHOTOS } from './store.js';
 import { CRITERIA, LEVEL_LABELS, overallScore, grade, aggregate, rankVenues, valueRatio, scoreHistogram } from './scoring.js';
 import { INGREDIENT_CATEGORIES, EXTRAS_SUGGESTIONS, normalizeIngredients, ingredientList, insightsByCategory, previouslyUsed } from './ingredients.js';
 import { formatDistance, nearest, geocode, currentPosition } from './geo.js';
@@ -152,6 +152,10 @@ function renderVenue(id) {
   const g = grade(st.avg);
   const hasLoc = venue.lat != null && venue.lng != null;
   const common = INGREDIENT_CATEGORIES.map((c) => ({ c, top: insightsByCategory(tastings, c.key, () => 0).sort((a, b) => b.count - a.count)[0] })).filter((x) => x.top);
+  const photos = [
+    ...venue.photos.map((src) => ({ src, caption: '', removable: true })),
+    ...tastings.filter((t) => t.photo).map((t) => ({ src: t.photo, caption: `Tasting · ${fmtDate(t.date)}`, removable: false })),
+  ];
   view.innerHTML = `
     <div class="card">
       <div class="row">
@@ -183,8 +187,76 @@ function renderVenue(id) {
       ${common.map(({ c, top }) => `<span class="chip" title="${esc(c.label)}">${esc(top.name)}${top.count > 1 ? ` ×${top.count}` : ''}</span>`).join('')}
     </div>` : ''}
 
+    <h2>Photos <small>· ${photos.length}</small></h2>
+    <div class="card">
+      ${photos.length ? `<div class="gallery">${photos.map((p, i) => `<button type="button" class="gallery-item" data-photo="${i}" aria-label="Open photo ${i + 1}"><img src="${p.src}" alt="" loading="lazy">${p.caption ? `<span class="gallery-cap">${esc(p.caption)}</span>` : ''}</button>`).join('')}</div>` : '<p class="muted small" style="margin:0 0 10px">No photos yet. Add the bar, the glass, the menu.</p>'}
+      <label class="btn block" id="add-photos-btn">Add photos <input type="file" id="venue-photos" accept="image/*" multiple hidden></label>
+    </div>
+
     <h2>Tastings</h2>
     <div class="stack">${tastings.length ? tastings.map((t) => tastingItem(t)).join('') : '<p class="muted">Nothing logged here yet.</p>'}</div>`;
+
+  qs('#venue-photos').addEventListener('change', async (e) => {
+    const files = [...(e.target.files || [])];
+    if (!files.length) return;
+    const room = MAX_VENUE_PHOTOS - venue.photos.length;
+    if (room <= 0) { toast(`This venue already has ${MAX_VENUE_PHOTOS} photos. Remove one first.`); return; }
+    const btn = qs('#add-photos-btn'); btn.classList.add('is-busy'); btn.firstChild.textContent = 'Adding… ';
+    const added = [];
+    for (const file of files.slice(0, room)) {
+      try { added.push(await downscaleImage(file)); } catch (err) { toast(err.message); }
+    }
+    try {
+      store.updateVenue(id, { photos: [...venue.photos, ...added] });
+      toast(added.length === 1 ? 'Photo added' : `${added.length} photos added`);
+    } catch (err) {
+      toast(/quota/i.test(err.message) ? 'Storage is full. Remove some photos or export and clear old data.' : err.message);
+    }
+    renderVenue(id);
+  });
+  qsa('.gallery-item').forEach((b) => b.addEventListener('click', () => openLightbox(photos, Number(b.dataset.photo), {
+    onRemove: (p, idx) => {
+      if (!confirm('Remove this photo from the venue?')) return false;
+      store.updateVenue(id, { photos: venue.photos.filter((_, k) => k !== idx) }); // venue photos come first, so idx maps 1:1
+      toast('Photo removed');
+      renderVenue(id);
+      return true;
+    },
+  })));
+}
+
+/** Full-screen photo viewer. `photos` = [{src, caption, removable}]. */
+function openLightbox(photos, index, { onRemove } = {}) {
+  let i = index;
+  const box = document.createElement('div');
+  box.className = 'lightbox';
+  box.setAttribute('role', 'dialog');
+  box.setAttribute('aria-label', 'Photo viewer');
+  const draw = () => {
+    const p = photos[i];
+    box.innerHTML = `
+      <img src="${p.src}" alt="">
+      <div class="lightbox-bar">
+        <span class="small">${esc(p.caption || '')} <span class="muted">${i + 1}/${photos.length}</span></span>
+        <span class="row">
+          ${photos.length > 1 ? '<button type="button" class="btn sm" data-act="prev" aria-label="Previous">‹</button><button type="button" class="btn sm" data-act="next" aria-label="Next">›</button>' : ''}
+          ${p.removable && onRemove ? '<button type="button" class="btn sm danger" data-act="remove">Remove</button>' : ''}
+          <button type="button" class="btn sm" data-act="close">Close</button>
+        </span>
+      </div>`;
+  };
+  const close = () => { box.remove(); document.removeEventListener('keydown', onKey); };
+  const onKey = (e) => { if (e.key === 'Escape') close(); if (e.key === 'ArrowRight') { i = (i + 1) % photos.length; draw(); } if (e.key === 'ArrowLeft') { i = (i - 1 + photos.length) % photos.length; draw(); } };
+  box.addEventListener('click', (e) => {
+    const act = e.target.closest('[data-act]')?.dataset.act;
+    if (act === 'close' || (!act && e.target === box)) return close();
+    if (act === 'prev') { i = (i - 1 + photos.length) % photos.length; draw(); }
+    if (act === 'next') { i = (i + 1) % photos.length; draw(); }
+    if (act === 'remove' && onRemove(photos[i], i)) close();
+  });
+  document.addEventListener('keydown', onKey);
+  draw();
+  document.body.appendChild(box);
 }
 
 // ---------- Location picker (shared) ----------

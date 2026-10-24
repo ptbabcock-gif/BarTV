@@ -161,6 +161,22 @@ try {
   await page.waitForSelector('.score-badge.lg');
   assert.equal(await page.locator('.tasting').count(), 1);
 
+  // Venue photos: add two, open the viewer, remove one
+  const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAEklEQVR42mP8z8DwnwEIGGEMAD3wBf1W5vd9AAAAAElFTkSuQmCC', 'base64');
+  await page.setInputFiles('#venue-photos', [{ name: 'a.png', mimeType: 'image/png', buffer: PNG }, { name: 'b.png', mimeType: 'image/png', buffer: PNG }]);
+  await page.waitForSelector('.gallery-item');
+  assert.equal(await page.locator('.gallery-item').count(), 2);
+  await page.click('.gallery-item:first-child');
+  await page.waitForSelector('.lightbox img');
+  page.once('dialog', (d) => d.accept());
+  await page.click('.lightbox [data-act="remove"]');
+  await page.waitForSelector('.lightbox', { state: 'detached' });
+  assert.equal(await page.locator('.gallery-item').count(), 1);
+  await page.reload();
+  await page.waitForSelector('.gallery-item');
+  assert.equal(await page.locator('.gallery-item').count(), 1, 'venue photo persists');
+  await shot('09-photos');
+
   // Edit venue + persistence across reload
   await page.click('a:has-text("Edit")');
   await page.fill('#f-name', 'Swift Soho');

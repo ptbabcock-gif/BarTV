@@ -71,7 +71,7 @@ directions link that opens the device's maps app.
 ## Data model
 
 ```
-venue    { id, name, city, address, lat, lng, notes, createdAt }
+venue    { id, name, city, address, lat, lng, notes, photos[] (data URLs, max 30), createdAt }
 tasting  { id, venueId, date (YYYY-MM-DD), price, scores {coffee, balance, foam,
            presentation, temperature}, ingredients {vodka, coffee, liqueur, sweetener,
            garnish, extras[]}, notes, wouldOrderAgain, photo (data URL), createdAt }

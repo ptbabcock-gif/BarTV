@@ -95,3 +95,13 @@ test('subscribe notifies on change', () => {
   assert.equal(n, 2);
   assert.equal(s.state.settings.theme, 'dark');
 });
+
+test('venue photos: only data images are kept, capped at the maximum', () => {
+  const s = fresh();
+  const good = 'data:image/jpeg;base64,AAAA';
+  const v = s.addVenue({ name: 'V', photos: [good, 'http://x/y.jpg', 42, good] });
+  assert.deepEqual(v.photos, [good, good]);
+  s.updateVenue(v.id, { photos: new Array(40).fill(good) });
+  assert.equal(s.getVenue(v.id).photos.length, 30);
+  assert.deepEqual(s.addVenue({ name: 'W' }).photos, []);
+});

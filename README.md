@@ -25,7 +25,7 @@ it works offline (map tiles and address search need a connection).
   full tasting history.
 - **History** grouped by month, **Stats** (KPIs, best drink, best value, score
   distribution, criterion averages, ingredient insights).
-- Photos (downscaled on device), notes, price, "would order again".
+- Venue photo gallery (add several at once, full-screen viewer, remove) plus a photo per tasting, all downscaled on device; notes, price, "would order again".
 - Light / dark theme, currency symbol, JSON export/import (merge or replace), sample data.
 - All data lives in the browser's local storage on your device. Nothing is sent anywhere
   except tile and address requests to OpenStreetMap when you use the map.

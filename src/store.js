@@ -4,6 +4,7 @@ import { normalizeIngredients } from './ingredients.js';
 
 export const SCHEMA_VERSION = 1;
 export const STORAGE_KEY = 'crema.state';
+export const MAX_VENUE_PHOTOS = 30;
 
 function uid() {
   if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
@@ -45,6 +46,7 @@ export function sanitizeVenue(v = {}) {
     lat: lat != null && lat >= -90 && lat <= 90 ? lat : null,
     lng: lng != null && lng >= -180 && lng <= 180 ? lng : null,
     notes: String(v.notes ?? '').trim(),
+    photos: (Array.isArray(v.photos) ? v.photos : []).filter((p) => typeof p === 'string' && p.startsWith('data:image/')).slice(0, MAX_VENUE_PHOTOS),
     createdAt: v.createdAt || new Date().toISOString(),
   };
 }
