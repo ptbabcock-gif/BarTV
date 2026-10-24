@@ -127,13 +127,25 @@ export async function geocode(query, fetchImpl = globalThis.fetch) {
   return parseGeocode(await res.json());
 }
 
+/** Turn a GeolocationPositionError into something a person can act on. */
+export function describeGeoError(err = {}) {
+  const msg = String(err.message || '');
+  if (/permissions policy|feature policy|disabled in this document/i.test(msg)) {
+    return 'Location is blocked by the page this app is embedded in. Open the app at its own web address to use it.';
+  }
+  if (err.code === 1) return 'Location permission was denied. Allow location for this site in your browser settings.';
+  if (err.code === 2) return 'Your position could not be determined. Check that location services are on.';
+  if (err.code === 3) return 'Finding your location timed out. Try again outdoors or on Wi-Fi.';
+  return msg || 'Could not get your location';
+}
+
 /** Promise wrapper around the Geolocation API. */
 export function currentPosition(geolocation = globalThis.navigator?.geolocation) {
   return new Promise((resolve, reject) => {
     if (!geolocation) return reject(new Error('Location is not available on this device'));
     geolocation.getCurrentPosition(
       (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy }),
-      (err) => reject(new Error(err.message || 'Could not get your location')),
+      (err) => reject(new Error(describeGeoError(err))),
       { enableHighAccuracy: true, timeout: 12000, maximumAge: 60000 },
     );
   });

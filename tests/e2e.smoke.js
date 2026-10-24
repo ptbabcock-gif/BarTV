@@ -184,6 +184,18 @@ try {
   await page.waitForSelector('#list .card');
   await shot('08-light');
 
+  // Tile outage: the map explains itself instead of showing a blank box
+  const offline = await browser.newContext({ viewport: { width: 390, height: 844 }, serviceWorkers: 'block' });
+  await offline.route('https://tile.openstreetmap.org/**', (r) => r.abort());
+  const p2 = await offline.newPage();
+  await p2.goto(BASE + '#/settings');
+  await p2.click('#sample');
+  await p2.goto(BASE + '#/map');
+  await p2.waitForSelector('.cmap-notice:not([hidden])');
+  assert.match(await p2.textContent('.cmap-notice'), /could not load/);
+  assert.equal(await p2.locator('.cmap-pin').count(), 5, 'pins still render without tiles');
+  await offline.close();
+
   assert.deepEqual(errors, [], 'no console or page errors');
   console.log('e2e smoke: all checks passed');
 } finally {

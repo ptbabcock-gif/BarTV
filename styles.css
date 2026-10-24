@@ -190,6 +190,7 @@ button.chip { min-height: 32px; }
 .cmap-user { position: absolute; left: 0; top: 0; width: 16px; height: 16px; margin: -8px 0 0 -8px; border-radius: 50%; background: #2b7de9; border: 3px solid #fff; box-shadow: 0 0 0 6px rgba(43,125,233,.25); pointer-events: none; }
 .cmap-controls { position: absolute; right: 12px; top: 12px; display: flex; flex-direction: column; gap: 6px; }
 .cmap-btn { width: 40px; height: 40px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg-elev); color: var(--ink); font-size: 1.3rem; font-weight: 600; box-shadow: var(--shadow); }
+.cmap-notice { position: absolute; left: 12px; right: 64px; top: 12px; padding: 8px 12px; border-radius: 10px; background: color-mix(in srgb, var(--bg-elev) 92%, transparent); border: 1px solid var(--line); color: var(--ink-2); font-size: .8rem; box-shadow: var(--shadow); z-index: 2; }
 .cmap-attrib { position: absolute; left: 0; bottom: 0; font-size: .65rem; padding: 2px 6px; background: color-mix(in srgb, var(--bg-elev) 80%, transparent); color: var(--ink-3); border-top-right-radius: 6px; }
 .map-fab { position: absolute; right: 12px; bottom: 16px; z-index: 3; }
 .map-sheet { position: absolute; left: 12px; right: 12px; bottom: 16px; z-index: 4; }

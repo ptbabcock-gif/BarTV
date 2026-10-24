@@ -520,6 +520,11 @@ function renderMap() {
     <div class="map-panel" id="panel">
       ${located.length === 0 ? `<p class="muted small">${venues.length ? 'None of your venues has a map location yet. Open a venue, tap Edit and use “Use my location” or “Find address”.' : 'Rate a martini and set its location to see it here.'}</p>` : ''}
       ${unlocated > 0 && located.length ? `<p class="muted small">${unlocated} venue${unlocated > 1 ? 's' : ''} without a map location — <a href="#/venues">add one from the venue page</a>.</p>` : ''}
+      <form class="row" id="jump" style="margin-top:4px">
+        <input class="input grow" id="jump-q" placeholder="Jump to a city or address" aria-label="Jump to a city or address" autocomplete="off">
+        <button class="btn sm" type="submit">Go</button>
+      </form>
+      <p class="muted small" id="jump-msg" style="margin:6px 0 0"></p>
       <div id="near"></div>
     </div>`;
 
@@ -538,9 +543,9 @@ function renderMap() {
   else map.fit(located.map((r) => r.venue));
   if (lastPosition) { map.setUserLocation(lastPosition); drawNear(lastPosition); }
 
-  function drawNear(pos) {
+  function drawNear(pos, heading = 'Nearest to you') {
     const near = nearest(located.map((r) => r.venue), pos, 5);
-    qs('#near').innerHTML = near.length ? `<h2 style="margin-top:4px">Nearest to you</h2><div class="stack">${near.map(({ venue, km }) => venueCard(located.find((r) => r.venue.id === venue.id), `<span class="muted small">${formatDistance(km)}</span>`)).join('')}</div>` : '';
+    qs('#near').innerHTML = near.length ? `<h2 style="margin-top:4px">${esc(heading)}</h2><div class="stack">${near.map(({ venue, km }) => venueCard(located.find((r) => r.venue.id === venue.id), `<span class="muted small">${formatDistance(km)}</span>`)).join('')}</div>` : '';
   }
   qs('#locate').addEventListener('click', async (e) => {
     const b = e.currentTarget; b.disabled = true; b.textContent = 'Locating…';
@@ -552,6 +557,18 @@ function renderMap() {
       drawNear(p);
     } catch (err) { toast(err.message); }
     b.disabled = false; b.textContent = '◎ Near me';
+  });
+  qs('#jump').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const msg = qs('#jump-msg');
+    msg.textContent = 'Searching…';
+    try {
+      const [hit] = await geocode(qs('#jump-q').value, undefined);
+      if (!hit) { msg.textContent = 'No match. Try adding the country.'; return; }
+      msg.textContent = hit.address;
+      map.setView(hit, 13);
+      drawNear(hit, 'Nearest to ' + (hit.city || hit.name));
+    } catch (err) { msg.textContent = `${err.message}. Place search needs an internet connection.`; }
   });
   cleanup = () => map.destroy();
 }

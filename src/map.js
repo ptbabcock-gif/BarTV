@@ -14,6 +14,7 @@ export function createMap(container, opts = {}) {
     maxZoom: 18,
     onMarkerClick: null,
     onMoveEnd: null,
+    tileErrorText: 'Street map tiles could not load (offline, or blocked by this viewer). Pins and distances still work.',
     attribution: '© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors',
     ...opts,
   };
@@ -31,7 +32,14 @@ export function createMap(container, opts = {}) {
       <button type="button" class="cmap-btn" data-act="in" aria-label="Zoom in">+</button>
       <button type="button" class="cmap-btn" data-act="out" aria-label="Zoom out">−</button>
     </div>
+    <div class="cmap-notice" hidden></div>
     <div class="cmap-attrib">${o.attribution}</div>`;
+  const noticeEl = container.querySelector('.cmap-notice');
+  let tileOk = 0, tileFail = 0;
+  const tileStatus = () => {
+    if (tileOk === 0 && tileFail >= 2) { noticeEl.textContent = o.tileErrorText; noticeEl.hidden = false; }
+    else if (tileOk > 0) noticeEl.hidden = true;
+  };
   const tilesEl = container.querySelector('.cmap-tiles');
   const markersEl = container.querySelector('.cmap-markers');
 
@@ -65,7 +73,8 @@ export function createMap(container, opts = {}) {
         img.draggable = false;
         img.decoding = 'async';
         img.loading = 'lazy';
-        img.addEventListener('error', () => img.classList.add('is-missing'), { once: true });
+        img.addEventListener('error', () => { img.classList.add('is-missing'); tileFail++; tileStatus(); }, { once: true });
+        img.addEventListener('load', () => { tileOk++; tileStatus(); }, { once: true });
         img.src = o.tileUrl.replace('{z}', t.z).replace('{x}', t.x).replace('{y}', t.y);
         tileEls.set(key, img);
         tilesEl.appendChild(img);
