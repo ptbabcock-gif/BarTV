@@ -1,0 +1,16 @@
+{
+  "name": "crema",
+  "version": "1.0.0",
+  "description": "Crema — rate, map and remember every espresso martini. Offline-first PWA, no build step.",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "start": "node scripts/serve.js",
+    "test": "node --test \"tests/**/*.test.js\"",
+    "e2e": "node tests/e2e.smoke.js",
+    "icons": "node scripts/make-icons.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
