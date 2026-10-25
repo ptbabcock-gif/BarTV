@@ -3,7 +3,7 @@
 // The anon key is designed to be public; row-level security in supabase/schema.sql
 // is what protects the data. Leave both empty to run the app in solo (device-only) mode.
 export const CLOUD = globalThis.__CHEERS_CLOUD__ || {
-  url: '',
+  url: 'https://azlrrgdzqdkgneddqrzq.supabase.co',
   anonKey: 'sb_publishable_LpUhHMpF8CskjBsW75GnKA_SHPsfa67',
 };
 // `globalThis.__CHEERS_CLOUD__` is an override hook used by the browser tests.
