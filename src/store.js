@@ -127,7 +127,8 @@ export function createStore(storage, key = STORAGE_KEY) {
   }
 
   function persist() {
-    state.savedAt = new Date().toISOString();
+    // Unique per save, even within the same millisecond, so other tabs can tell saves apart.
+    state.savedAt = `${new Date().toISOString()}#${Math.random().toString(36).slice(2, 8)}`;
     storage.setItem(key, JSON.stringify(state));
     for (const fn of listeners) fn(state);
   }
