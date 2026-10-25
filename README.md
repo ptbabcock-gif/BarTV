@@ -26,9 +26,13 @@ it works offline (map tiles and address search need a connection).
 - **History** grouped by month, **Stats** (KPIs, best drink, best value, score
   distribution, criterion averages, ingredient insights).
 - Venue photo gallery (add several at once, full-screen viewer, remove) plus a photo per tasting, all downscaled on device; notes, price, "would order again".
+- **Groups** — rate together on one shared leaderboard: create a group, share a six-letter
+  code or invite link, and everyone's venues, ratings and photos sync (offline-first, with
+  names on each rating). Backed by a free Supabase project you own; setup in `docs/GROUPS.md`.
 - Light / dark theme, currency symbol, JSON export/import (merge or replace), sample data.
-- All data lives in the browser's local storage on your device. Nothing is sent anywhere
-  except tile and address requests to OpenStreetMap when you use the map.
+- In solo mode all data lives in the browser's local storage on your device, and nothing is
+  sent anywhere except tile and address requests to OpenStreetMap. In a group, shared data
+  also goes to your own Supabase project.
 
 ## Run it
 
@@ -43,7 +47,7 @@ Serve over HTTPS or localhost so geolocation and the service worker are allowed.
 
 ```sh
 npm test             # unit tests for scoring, ingredients, store and geo (node:test)
-npm run e2e          # Playwright browser smoke test (needs `playwright` installed)
+npm run e2e          # Playwright browser tests: solo smoke test + two-phone group test
 npm run icons        # regenerate PNG icons from icons/icon.svg (needs Playwright)
 ```
 
@@ -67,11 +71,17 @@ src/geo.js              haversine, Web Mercator tile math, geocoding (pure)
 src/map.js              dependency-free slippy map (tiles, pan, pinch, pins)
 src/ui.js               DOM/format helpers
 src/sample-data.js      demo venues and tastings
+src/config.js           Supabase URL + anon key (empty = solo mode)
+src/cloud.js            Supabase REST client over fetch (auth, tables, RPC, storage)
+src/sync.js             offline-first sync engine for groups
+supabase/schema.sql     database schema, security rules and functions
+tests/fake-supabase.js  in-memory Supabase stand-in used by the tests
 tests/*.test.js         unit tests
 tests/e2e.smoke.js      Playwright smoke test
 scripts/serve.js        static dev server
 scripts/make-icons.js   icon generator
 docs/DESIGN.md          design rationale, data model, scoring maths
+docs/GROUPS.md          group setup and how sync works
 ```
 
 Map data © OpenStreetMap contributors. Please respect the

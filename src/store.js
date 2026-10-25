@@ -6,6 +6,26 @@ export const SCHEMA_VERSION = 1;
 export const STORAGE_KEY = 'crema.state';
 export const MAX_VENUE_PHOTOS = 30;
 
+export const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+export function isImageRef(p) { return typeof p === 'string' && (p.startsWith('data:image/') || /^https:\/\//.test(p)); }
+
+export function emptyCloud() {
+  return { group: null, me: null, session: null, members: {}, pending: [], lastSync: null };
+}
+
+export function sanitizeCloud(c) {
+  const base = emptyCloud();
+  if (!c || typeof c !== 'object') return base;
+  return {
+    group: c.group && c.group.id ? { id: String(c.group.id), name: String(c.group.name || ''), code: String(c.group.code || '') } : null,
+    me: c.me && c.me.id ? { id: String(c.me.id), name: String(c.me.name || '') } : null,
+    session: c.session && c.session.access ? { ...c.session } : null,
+    members: c.members && typeof c.members === 'object' ? { ...c.members } : {},
+    pending: Array.isArray(c.pending) ? c.pending.filter((op) => op && op.type) : [],
+    lastSync: typeof c.lastSync === 'string' ? c.lastSync : null,
+  };
+}
+
 function uid() {
   if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
   return 'id-' + Math.random().toString(36).slice(2) + Date.now().toString(36);
@@ -17,7 +37,7 @@ export function todayISO(d = new Date()) {
 }
 
 export function emptyState() {
-  return { version: SCHEMA_VERSION, venues: [], tastings: [], settings: { theme: 'auto', currency: '$' } };
+  return { version: SCHEMA_VERSION, venues: [], tastings: [], settings: { theme: 'auto', currency: '$' }, cloud: emptyCloud() };
 }
 
 /** In-memory Storage stand-in for Node tests. */
@@ -46,7 +66,10 @@ export function sanitizeVenue(v = {}) {
     lat: lat != null && lat >= -90 && lat <= 90 ? lat : null,
     lng: lng != null && lng >= -180 && lng <= 180 ? lng : null,
     notes: String(v.notes ?? '').trim(),
-    photos: (Array.isArray(v.photos) ? v.photos : []).filter((p) => typeof p === 'string' && p.startsWith('data:image/')).slice(0, MAX_VENUE_PHOTOS),
+    photos: (Array.isArray(v.photos) ? v.photos : []).filter(isImageRef).slice(0, MAX_VENUE_PHOTOS),
+    photoIds: v.photoIds && typeof v.photoIds === 'object' ? { ...v.photoIds } : {},
+    groupId: v.groupId ? String(v.groupId) : null,
+    createdBy: v.createdBy ? String(v.createdBy) : null,
     createdAt: v.createdAt || new Date().toISOString(),
   };
 }
@@ -67,7 +90,10 @@ export function sanitizeTasting(t = {}) {
     ingredients: normalizeIngredients(t.ingredients),
     notes: String(t.notes ?? '').trim(),
     wouldOrderAgain: typeof t.wouldOrderAgain === 'boolean' ? t.wouldOrderAgain : null,
-    photo: typeof t.photo === 'string' && t.photo.startsWith('data:image/') ? t.photo : null,
+    photo: isImageRef(t.photo) ? t.photo : null,
+    groupId: t.groupId ? String(t.groupId) : null,
+    userId: t.userId ? String(t.userId) : null,
+    userName: String(t.userName ?? '').trim(),
     createdAt: t.createdAt || new Date().toISOString(),
   };
 }
@@ -80,12 +106,15 @@ export function sanitizeState(raw) {
   const ids = new Set(venues.map((v) => v.id));
   const tastings = raw.tastings.map(sanitizeTasting).filter((t) => ids.has(t.venueId));
   const base = emptyState();
-  return { ...base, venues, tastings, settings: { ...base.settings, ...(raw.settings || {}) } };
+  return { ...base, venues, tastings, settings: { ...base.settings, ...(raw.settings || {}) }, cloud: sanitizeCloud(raw.cloud) };
 }
 
 export function createStore(storage, key = STORAGE_KEY) {
   let state;
   const listeners = new Set();
+  let mutationHook = null;
+  let silent = 0;
+  const emit = (op) => { if (!silent && mutationHook) mutationHook(op); };
 
   function load() {
     try {
@@ -120,6 +149,7 @@ export function createStore(storage, key = STORAGE_KEY) {
       if (!v.name) throw new Error('Venue needs a name');
       state.venues.push(v);
       persist();
+      emit({ type: 'venue', id: v.id });
       return v;
     },
     updateVenue(id, patch) {
@@ -129,12 +159,16 @@ export function createStore(storage, key = STORAGE_KEY) {
       if (!v.name) throw new Error('Venue needs a name');
       state.venues[i] = v;
       persist();
+      emit({ type: 'venue', id: v.id });
       return v;
     },
     deleteVenue(id) {
+      const gone = state.tastings.filter((t) => t.venueId === id).map((t) => t.id);
       state.venues = state.venues.filter((v) => v.id !== id);
       state.tastings = state.tastings.filter((t) => t.venueId !== id);
       persist();
+      for (const tid of gone) emit({ type: 'delete_tasting', id: tid });
+      emit({ type: 'delete_venue', id });
     },
     /** Reuse an existing venue by name+city or create a new one. */
     findOrCreateVenue(data) {
@@ -151,6 +185,7 @@ export function createStore(storage, key = STORAGE_KEY) {
       if (!api.getVenue(t.venueId)) throw new Error('Tasting needs a venue');
       state.tastings.push(t);
       persist();
+      emit({ type: 'tasting', id: t.id });
       return t;
     },
     updateTasting(id, patch) {
@@ -160,12 +195,22 @@ export function createStore(storage, key = STORAGE_KEY) {
       if (!api.getVenue(t.venueId)) throw new Error('Tasting needs a venue');
       state.tastings[i] = t;
       persist();
+      emit({ type: 'tasting', id: t.id });
       return t;
     },
     deleteTasting(id) {
       state.tastings = state.tastings.filter((t) => t.id !== id);
       persist();
+      emit({ type: 'delete_tasting', id });
     },
+
+    // ----- cloud / sync support -----
+    /** Register the function called after every local mutation (used by the sync engine). */
+    setMutationHook(fn) { mutationHook = fn; },
+    /** Run `fn` applying remote changes without triggering the mutation hook. */
+    applyRemote(fn) { silent++; try { return fn(api); } finally { silent--; } },
+    /** Patch cloud state (group, session, queue) and persist, without mutation hooks. */
+    updateCloud(patch) { state.cloud = sanitizeCloud({ ...state.cloud, ...patch }); persist(); return state.cloud; },
 
     // ----- settings -----
     setSetting(k, v) { state.settings = { ...state.settings, [k]: v }; persist(); },
@@ -178,7 +223,7 @@ export function createStore(storage, key = STORAGE_KEY) {
     importJSON(text, mode = 'merge') {
       const incoming = sanitizeState(JSON.parse(text));
       if (mode === 'replace') {
-        state = incoming;
+        state = { ...incoming, cloud: state.cloud };
       } else {
         const vIds = new Set(state.venues.map((v) => v.id));
         const tIds = new Set(state.tastings.map((t) => t.id));
@@ -189,7 +234,7 @@ export function createStore(storage, key = STORAGE_KEY) {
       return { venues: incoming.venues.length, tastings: incoming.tastings.length };
     },
     replaceState(next) { state = sanitizeState(next); persist(); },
-    clear() { state = emptyState(); persist(); },
+    clear() { state = { ...emptyState(), cloud: state.cloud }; persist(); },
     reload: load,
   };
   return api;

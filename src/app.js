@@ -5,8 +5,18 @@ import { formatDistance, nearest, geocode, currentPosition } from './geo.js';
 import { createMap } from './map.js';
 import { esc, fmtMoney, fmtDate, fmtScore, toast, download, downscaleImage, readFileText, qs, qsa } from './ui.js';
 import { sampleState } from './sample-data.js';
+import { CLOUD } from './config.js';
+import { createCloud } from './cloud.js';
+import { createSync, SYNC_STATUS } from './sync.js';
 
 const store = createStore(localStorage);
+const cloud = createCloud({
+  url: CLOUD.url, anonKey: CLOUD.anonKey,
+  getSession: () => store.state.cloud.session,
+  setSession: (session) => store.updateCloud({ session }),
+});
+const sync = createSync({ store, cloud, onStatus: drawSyncChip });
+let lastAutoSync = 0;
 const view = qs('#view');
 const titleEl = qs('#page-title');
 let cleanup = null;           // teardown for the current view
@@ -33,17 +43,46 @@ const routes = [
   [/^#\/history$/, renderHistory],
   [/^#\/stats$/, renderStats],
   [/^#\/settings$/, renderSettings],
+  [/^#\/join\/([A-Za-z0-9]+)$/, renderJoin],
 ];
 
-function router() {
+function drawSyncChip(status, err) {
+  const chip = qs('#sync-chip');
+  if (!chip) return;
+  const labels = { syncing: 'Syncing', synced: 'Synced', pending: 'Pending', offline: 'Offline', error: 'Sync error' };
+  chip.hidden = status === SYNC_STATUS.solo;
+  chip.dataset.status = status;
+  chip.textContent = labels[status] || '';
+  const group = store.state.cloud.group;
+  chip.title = err || (group ? `Group: ${group.name}` : '');
+}
+
+/** Pull group changes in the background, re-rendering list views if anything changed. */
+function autoSync(force = false) {
+  if (!sync.inGroup()) return;
+  if (!force && Date.now() - lastAutoSync < 30_000) return;
+  lastAutoSync = Date.now();
+  const hashBefore = location.hash;
+  sync.sync().then((res) => {
+    if (!res || !res.changed || location.hash !== hashBefore) return;
+    if (/^#\/(rate|tasting\/|venue\/[^/]+\/edit|join)/.test(hashBefore)) return; // never clobber a form
+    const y = window.scrollY;
+    router({ keepScroll: true });
+    window.scrollTo(0, y);
+  });
+}
+
+function router(opts = {}) {
   cleanup?.();
   cleanup = null;
   view.classList.remove('is-map');
   const hash = location.hash || '#/venues';
+  if (!opts.keepScroll) autoSync();
   for (const [re, fn] of routes) {
     const m = hash.match(re);
     if (m) {
       fn(...m.slice(1));
+      if (opts.keepScroll) return;
       qsa('.tabbar a').forEach((a) => a.classList.toggle('is-active', hash.startsWith(`#/${a.dataset.tab}`) || (a.dataset.tab === 'venues' && hash.startsWith('#/venue/')) || (a.dataset.tab === 'rate' && hash.startsWith('#/tasting/'))));
       window.scrollTo(0, 0);
       return;
@@ -51,8 +90,10 @@ function router() {
   }
   location.hash = '#/venues';
 }
-addEventListener('hashchange', router);
+addEventListener('hashchange', () => router());
 router();
+drawSyncChip(sync.status(), sync.lastError());
+addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') autoSync(); });
 
 function setTitle(t) { titleEl.textContent = t; document.title = t === 'Venues' ? 'The Cheers' : `${t} · The Cheers`; }
 function currency() { return store.state.settings.currency || '$'; }
@@ -88,7 +129,7 @@ function tastingItem(t, { showVenue = false } = {}) {
     <a class="card is-link tasting" href="#/tasting/${esc(t.id)}">
       ${scoreBadge(s)}
       <div class="grow">
-        ${showVenue ? `<strong>${esc(venue?.name || 'Unknown venue')}</strong>` : `<strong>${esc(fmtDate(t.date))}</strong>`}
+        ${showVenue ? `<strong>${esc(venue?.name || 'Unknown venue')}</strong>` : `<strong>${esc(fmtDate(t.date))}</strong>`}${t.userName && sync.inGroup() ? ` <span class="chip who">${esc(t.userName)}</span>` : ''}
         <div class="meta">${showVenue ? esc(fmtDate(t.date)) : ''}${t.price != null ? `${showVenue ? ' · ' : ''}${fmtMoney(t.price, currency())}` : ''}${t.wouldOrderAgain === true ? ' · would order again' : t.wouldOrderAgain === false ? ' · would not order again' : ''}</div>
         ${ing.length ? `<div class="chips" style="margin-top:6px">${ing.slice(0, 5).map((i) => `<span class="chip">${esc(i)}</span>`).join('')}${ing.length > 5 ? `<span class="chip">+${ing.length - 5}</span>` : ''}</div>` : ''}
         ${t.notes ? `<p class="small" style="margin:6px 0 0">${esc(t.notes)}</p>` : ''}
@@ -167,7 +208,7 @@ function renderVenue(id) {
         </div>
       </div>
       <div class="grid-3" style="margin-top:14px">
-        <div><div class="muted small">Tastings</div><strong>${st.count}</strong></div>
+        <div><div class="muted small">Tastings</div><strong>${st.count}</strong>${sync.inGroup() && st.count ? `<div class="muted small">by ${new Set(tastings.map((t) => t.userId || 'me')).size} ${new Set(tastings.map((t) => t.userId || 'me')).size === 1 ? 'person' : 'people'}</div>` : ''}</div>
         <div><div class="muted small">Avg price</div><strong>${st.avgPrice != null ? fmtMoney(st.avgPrice, currency()) : '–'}</strong></div>
         <div><div class="muted small">Order again</div><strong>${st.orderAgainRate != null ? st.orderAgainRate + '%' : '–'}</strong></div>
       </div>
@@ -217,7 +258,8 @@ function renderVenue(id) {
   qsa('.gallery-item').forEach((b) => b.addEventListener('click', () => openLightbox(photos, Number(b.dataset.photo), {
     onRemove: (p, idx) => {
       if (!confirm('Remove this photo from the venue?')) return false;
-      store.updateVenue(id, { photos: venue.photos.filter((_, k) => k !== idx) }); // venue photos come first, so idx maps 1:1
+      if (p.src.startsWith('https://')) sync.removeVenuePhoto(id, p.src);
+      else store.updateVenue(id, { photos: venue.photos.filter((_, k) => k !== idx) }); // venue photos come first, so idx maps 1:1
       toast('Photo removed');
       renderVenue(id);
       return true;
@@ -319,6 +361,7 @@ function renderRate({ query, tastingId } = {}) {
   const editing = tastingId ? store.getTasting(tastingId) : null;
   if (tastingId && !editing) { location.hash = '#/rate'; return; }
   const presetVenue = editing ? store.getVenue(editing.venueId) : store.getVenue(params.get('venue') || '');
+  if (editing && sync.inGroup() && editing.userId && editing.userId !== sync.me()?.id) return renderTastingReadOnly(editing, presetVenue);
   setTitle(editing ? 'Edit tasting' : 'Rate a martini');
 
   const f = {
@@ -521,6 +564,7 @@ function renderRate({ query, tastingId } = {}) {
         venue = store.findOrCreateVenue({ name: f.name, city: f.city, address: f.address, lat: f.lat, lng: f.lng });
       }
       const data = { venueId: venue.id, date: f.date, price: f.price === '' ? null : f.price, scores: f.scores, ingredients: f.ingredients, notes: f.notes, wouldOrderAgain: f.wouldOrderAgain, photo: f.photo };
+      if (sync.inGroup()) { data.groupId = sync.group().id; data.userId = editing?.userId || sync.me().id; data.userName = editing?.userName || sync.me().name; }
       if (editing) store.updateTasting(editing.id, data); else store.addTasting(data);
       toast(editing ? 'Tasting updated' : `Saved · ${fmtScore(overallScore(f.scores))} / 10`);
       location.hash = `#/venue/${venue.id}`;
@@ -535,6 +579,24 @@ function renderRate({ query, tastingId } = {}) {
     toast('Tasting deleted');
     location.hash = `#/venue/${venueId}`;
   });
+}
+
+function renderTastingReadOnly(t, venue) {
+  setTitle(venue?.name || 'Tasting');
+  const s = overallScore(t.scores);
+  const g = grade(s);
+  const ing = ingredientList(t.ingredients);
+  view.innerHTML = `
+    <div class="card">
+      <div class="row">${scoreBadge(s, 'lg')}<div class="grow"><div class="grade tone-${g.tone}">${esc(g.label)}</div><h2 style="margin:2px 0 4px;font-size:1.2rem">${esc(venue?.name || '')}</h2><div class="muted small">Rated by ${esc(t.userName || 'a group member')} · ${esc(fmtDate(t.date))}${t.price != null ? ` · ${fmtMoney(t.price, currency())}` : ''}</div></div></div>
+      ${t.photo ? `<img class="photo-preview" src="${t.photo}" alt="">` : ''}
+    </div>
+    <h2>Breakdown</h2>
+    <div class="card">${CRITERIA.map((c) => `<div class="bar-row"><span>${esc(c.label)}</span><div class="bar"><i style="width:${((t.scores[c.key] ?? 0) / 5) * 100}%"></i></div><b>${t.scores[c.key] ?? '–'}</b></div>`).join('')}</div>
+    ${ing.length ? `<h2>Ingredients</h2><div class="card chips">${ing.map((i) => `<span class="chip">${esc(i)}</span>`).join('')}</div>` : ''}
+    ${t.notes ? `<h2>Notes</h2><div class="card small">${esc(t.notes)}</div>` : ''}
+    <p class="muted small" style="text-align:center;margin-top:16px">Only ${esc(t.userName || 'the person who rated it')} can edit this tasting.</p>
+    <p style="text-align:center"><a class="btn" href="#/venue/${esc(t.venueId)}">Back to venue</a></p>`;
 }
 
 // ---------- Venue edit ----------
@@ -706,12 +768,111 @@ function renderStats() {
       ${CRITERIA.map((c) => `<div class="bar-row"><span>${esc(c.label)}</span><div class="bar"><i style="width:${((all.byCriterion[c.key] ?? 0) / 5) * 100}%"></i></div><b>${all.byCriterion[c.key] != null ? all.byCriterion[c.key].toFixed(1) : '–'}</b></div>`).join('')}
     </div>
 
+    ${sync.inGroup() ? `<h2>Who's been drinking</h2><div class="card">${Object.entries(tastings.reduce((m, t) => { const k = t.userName || 'Unknown'; m[k] = (m[k] || 0) + 1; return m; }, {})).sort((a, b) => b[1] - a[1]).map(([name, n]) => `<div class="bar-row"><span class="ellipsis">${esc(name)}</span><div class="bar"><i style="width:${(n / tastings.length) * 100}%"></i></div><b>${n}</b></div>`).join('')}</div>` : ''}
+
     ${insights.length ? `<h2>Ingredient insights <small>· avg score when used</small></h2>
     <div class="stack">${insights.map(({ c, rows }) => `
       <div class="card">
         <strong class="small">${esc(c.label)}</strong>
         ${rows.slice(0, 5).map((r) => `<div class="bar-row"><span class="ellipsis" title="${esc(r.name)}">${esc(r.name)}</span><div class="bar"><i style="width:${r.avg * 10}%"></i></div><b>${r.avg.toFixed(1)}<span class="muted small"> ×${r.count}</span></b></div>`).join('')}
       </div>`).join('')}</div>` : ''}`;
+}
+
+// ---------- Groups ----------
+function inviteLink(code) {
+  return `${location.origin}${location.pathname}#/join/${code}`;
+}
+
+async function shareInvite(group) {
+  const url = inviteLink(group.code);
+  const text = `Join "${group.name}" on The Cheers and rate espresso martinis with us. Code ${group.code}: ${url}`;
+  try {
+    if (navigator.share) { await navigator.share({ title: 'The Cheers', text, url }); return; }
+    await navigator.clipboard.writeText(url);
+    toast('Invite link copied');
+  } catch (e) { if (e?.name !== 'AbortError') toast(`Share it: ${url}`); }
+}
+
+function renderGroupCard(root) {
+  if (!cloud.configured) {
+    root.innerHTML = '<p class="small muted" style="margin:0">Groups are not set up on this copy of the app. See docs/GROUPS.md in the repository to connect a database.</p>';
+    return;
+  }
+  const g = sync.group();
+  if (!g) {
+    root.innerHTML = `
+      <p class="small muted">Share one leaderboard with friends. Everything already on this phone is shared with the group when you join.</p>
+      <label class="field"><span>Your name</span><input class="input" id="g-name" placeholder="How you'll appear on ratings" maxlength="40" value="${esc(sync.me()?.name || '')}"></label>
+      <div class="grid-2">
+        <div><label class="field"><span>Start a group</span><input class="input" id="g-new" placeholder="Group name" maxlength="60"></label><button type="button" class="btn block" id="g-create">Create</button></div>
+        <div><label class="field"><span>Join a group</span><input class="input" id="g-code" placeholder="6-letter code" maxlength="6" autocapitalize="characters" style="text-transform:uppercase"></label><button type="button" class="btn block primary" id="g-join">Join</button></div>
+      </div>
+      <p class="small" id="g-msg" style="color:var(--red);margin:8px 0 0"></p>`;
+    const msg = qs('#g-msg', root);
+    const name = () => qs('#g-name', root).value.trim();
+    const guard = () => { if (!name()) { msg.textContent = 'Enter your name first.'; qs('#g-name', root).focus(); return false; } return true; };
+    const confirmShare = () => !store.state.tastings.length || confirm(`Your ${store.state.tastings.length} existing tasting(s) and venues on this phone will be shared with the group. Continue?`);
+    qs('#g-create', root).addEventListener('click', async () => {
+      const gname = qs('#g-new', root).value.trim();
+      if (!guard()) return; if (!gname) { msg.textContent = 'Give the group a name.'; return; }
+      if (!confirmShare()) return;
+      msg.textContent = '';
+      try { await sync.createGroup(gname, name()); toast('Group created'); renderSettings(); } catch (e) { msg.textContent = e.message; }
+    });
+    qs('#g-join', root).addEventListener('click', async () => {
+      const code = qs('#g-code', root).value.trim().toUpperCase();
+      if (!guard()) return; if (code.length < 4) { msg.textContent = 'Enter the group code.'; return; }
+      if (!confirmShare()) return;
+      msg.textContent = '';
+      try { await sync.joinGroup(code, name()); toast('Joined the group'); location.hash = '#/venues'; } catch (e) { msg.textContent = e.message; }
+    });
+    return;
+  }
+  const members = Object.entries(sync.members());
+  const status = sync.status();
+  root.innerHTML = `
+    <div class="row between"><div><div class="muted small">Group</div><strong>${esc(g.name)}</strong></div><div style="text-align:right"><div class="muted small">Join code</div><strong class="code">${esc(g.code)}</strong></div></div>
+    <div class="row wrap" style="margin-top:12px">
+      <button type="button" class="btn primary grow" id="g-share">Share invite</button>
+      <button type="button" class="btn" id="g-sync">Sync now</button>
+    </div>
+    <p class="small muted" style="margin:10px 0 0" id="g-status">${esc(({ syncing: 'Syncing…', synced: 'Everything is synced', pending: 'Changes waiting to upload', offline: 'Offline — changes will upload when you are back online', error: 'Sync problem: ' + sync.lastError() })[status] || '')}${store.state.cloud.lastSync ? ` · last update ${new Date(store.state.cloud.lastSync).toLocaleString()}` : ''}</p>
+    <div class="field" style="margin-top:14px"><span>Members · ${members.length}</span><div class="chips">${members.map(([id, n]) => `<span class="chip ${id === sync.me().id ? 'is-on' : ''}">${esc(n)}</span>`).join('') || '<span class="muted small">Only you so far</span>'}</div></div>
+    <label class="field"><span>Your name</span><div class="row"><input class="input grow" id="g-me" maxlength="40" value="${esc(sync.me().name)}"><button type="button" class="btn sm" id="g-rename">Save</button></div></label>
+    <button type="button" class="btn danger block" id="g-leave">Leave group</button>
+    <p class="small" id="g-msg" style="color:var(--red);margin:8px 0 0"></p>`;
+  qs('#g-share', root).addEventListener('click', () => shareInvite(g));
+  qs('#g-sync', root).addEventListener('click', async () => { qs('#g-status', root).textContent = 'Syncing…'; await sync.sync(); renderSettings(); });
+  qs('#g-rename', root).addEventListener('click', async () => {
+    const n = qs('#g-me', root).value.trim(); if (!n) return;
+    try { await sync.setDisplayName(n); toast('Name updated'); renderSettings(); } catch (e) { qs('#g-msg', root).textContent = e.message; }
+  });
+  qs('#g-leave', root).addEventListener('click', () => {
+    if (!confirm(`Leave "${g.name}"? The ratings stay on this phone and in the group; this phone just stops syncing.`)) return;
+    sync.leaveGroup(); toast('Left the group'); renderSettings();
+  });
+}
+
+function renderJoin(code) {
+  setTitle('Join a group');
+  code = code.toUpperCase();
+  if (!cloud.configured) { view.innerHTML = emptyState('🔗', 'Groups are not available', 'This copy of the app is not connected to a database.'); return; }
+  if (sync.group()?.code === code) { location.hash = '#/venues'; return; }
+  view.innerHTML = `
+    <div class="card">
+      <p>You've been invited to rate espresso martinis together. Group code <strong class="code">${esc(code)}</strong>.</p>
+      <label class="field"><span>Your name</span><input class="input" id="j-name" placeholder="How you'll appear on ratings" maxlength="40" value="${esc(sync.me()?.name || '')}"></label>
+      <button type="button" class="btn primary block" id="j-go">Join the group</button>
+      <p class="small" id="j-msg" style="color:var(--red);margin:8px 0 0"></p>
+      ${store.state.tastings.length ? `<p class="small muted" style="margin-top:10px">Your ${store.state.tastings.length} existing tasting(s) on this phone will be shared with the group.</p>` : ''}
+    </div>`;
+  qs('#j-go').addEventListener('click', async () => {
+    const name = qs('#j-name').value.trim();
+    if (!name) { qs('#j-msg').textContent = 'Enter your name.'; return; }
+    const btn = qs('#j-go'); btn.disabled = true; btn.textContent = 'Joining…';
+    try { await sync.joinGroup(code, name); toast('Welcome to the group'); location.hash = '#/venues'; }
+    catch (e) { qs('#j-msg').textContent = e.message; btn.disabled = false; btn.textContent = 'Join the group'; }
+  });
 }
 
 // ---------- Settings ----------
@@ -725,6 +886,9 @@ function renderSettings() {
         <select class="input" id="theme"><option value="auto">Match device</option><option value="light">Light</option><option value="dark">Dark</option></select></label>
       <label class="field" style="margin:0"><span>Currency symbol</span><input class="input" id="currency" maxlength="4" value="${esc(s.currency)}"></label>
     </div>
+
+    <h2>Group <small>· rate together</small></h2>
+    <div class="card" id="group-card"></div>
 
     <h2>Your data</h2>
     <div class="card stack">
@@ -750,6 +914,7 @@ function renderSettings() {
     </div>
     <p class="muted small" style="text-align:center;margin-top:20px">The Cheers · map data © OpenStreetMap contributors</p>`;
 
+  renderGroupCard(qs('#group-card'));
   qs('#theme').value = s.theme || 'auto';
   qs('#theme').addEventListener('change', (e) => store.setSetting('theme', e.target.value));
   qs('#currency').addEventListener('change', (e) => store.setSetting('currency', e.target.value.trim() || '$'));
