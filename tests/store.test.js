@@ -105,3 +105,17 @@ test('venue photos: only data images are kept, capped at the maximum', () => {
   assert.equal(s.getVenue(v.id).photos.length, 30);
   assert.deepEqual(s.addVenue({ name: 'W' }).photos, []);
 });
+
+test('reloadIfChanged picks up what another tab saved, and only then', () => {
+  const storage = memoryStorage();
+  const a = createStore(storage);
+  const b = createStore(storage);
+  a.addVenue({ name: 'From tab A' });
+  assert.equal(b.state.venues.length, 0);
+  assert.equal(b.reloadIfChanged(), true);
+  assert.equal(b.state.venues.length, 1);
+  assert.equal(b.reloadIfChanged(), false, 'nothing new');
+  b.addVenue({ name: 'From tab B' });
+  assert.equal(a.reloadIfChanged(), true);
+  assert.equal(a.state.venues.length, 2, 'A did not lose B\'s venue');
+});

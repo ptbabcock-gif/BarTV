@@ -94,7 +94,18 @@ function router(opts = {}) {
 addEventListener('hashchange', () => router());
 router();
 drawSyncChip(sync.status(), sync.lastError());
-addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') autoSync(); });
+/** Another tab or the installed app saved newer data: pick it up and redraw list views. */
+function adoptExternalChanges() {
+  if (!store.reloadIfChanged()) return;
+  drawSyncChip(sync.status(), sync.lastError());
+  if (/^#\/(rate|tasting\/|venue\/[^/]+\/edit|join)/.test(location.hash)) return;
+  const y = window.scrollY;
+  router({ keepScroll: true });
+  window.scrollTo(0, y);
+}
+addEventListener('storage', (e) => { if (e.key === null || e.key === 'crema.state') adoptExternalChanges(); });
+addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { adoptExternalChanges(); autoSync(); } });
+addEventListener('pageshow', adoptExternalChanges);
 
 function setTitle(t) { titleEl.textContent = t; document.title = t === 'Venues' ? 'The Cheers' : `${t} · The Cheers`; }
 function currency() { return store.state.settings.currency || '$'; }

@@ -106,7 +106,7 @@ export function sanitizeState(raw) {
   const ids = new Set(venues.map((v) => v.id));
   const tastings = raw.tastings.map(sanitizeTasting).filter((t) => ids.has(t.venueId));
   const base = emptyState();
-  return { ...base, venues, tastings, settings: { ...base.settings, ...(raw.settings || {}) }, cloud: sanitizeCloud(raw.cloud) };
+  return { ...base, venues, tastings, settings: { ...base.settings, ...(raw.settings || {}) }, cloud: sanitizeCloud(raw.cloud), savedAt: typeof raw.savedAt === 'string' ? raw.savedAt : null };
 }
 
 export function createStore(storage, key = STORAGE_KEY) {
@@ -127,8 +127,14 @@ export function createStore(storage, key = STORAGE_KEY) {
   }
 
   function persist() {
+    state.savedAt = new Date().toISOString();
     storage.setItem(key, JSON.stringify(state));
     for (const fn of listeners) fn(state);
+  }
+
+  /** What another tab or window last saved, or null if storage is empty/unreadable. */
+  function storedSavedAt() {
+    try { return JSON.parse(storage.getItem(key) || 'null')?.savedAt || null; } catch { return null; }
   }
 
   load();
@@ -236,6 +242,14 @@ export function createStore(storage, key = STORAGE_KEY) {
     replaceState(next) { state = sanitizeState(next); persist(); },
     clear() { state = { ...emptyState(), cloud: state.cloud }; persist(); },
     reload: load,
+    /** Re-read storage if another tab/window saved newer data. Returns true when state changed. */
+    reloadIfChanged() {
+      const theirs = storedSavedAt();
+      if (!theirs || theirs === state.savedAt) return false;
+      load();
+      for (const fn of listeners) fn(state);
+      return true;
+    },
   };
   return api;
 }
