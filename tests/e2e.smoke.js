@@ -42,7 +42,7 @@ try {
   await shot('01-empty');
 
   // Load sample data
-  await page.click('a[href="#/settings"]');
+  await page.click('a.icon-btn[href="#/settings"]');
   await page.click('#sample');
   await page.waitForSelector('.card.is-link');
   assert.equal(await page.locator('#list .card').count(), 5);
@@ -218,7 +218,7 @@ try {
   assert.match(await page.textContent('#page-title'), /Swift Soho/);
 
   // Export produces valid JSON with the right counts
-  await page.click('a[href="#/settings"]');
+  await page.click('a.icon-btn[href="#/settings"]');
   const [dl] = await Promise.all([page.waitForEvent('download'), page.click('#export')]);
   const text = await (await import('node:fs/promises')).readFile(await dl.path(), 'utf8');
   const data = JSON.parse(text);
