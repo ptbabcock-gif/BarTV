@@ -38,7 +38,7 @@
   <script type="module" src="src/app.js"></script>
   <script>
     if ('serviceWorker' in navigator && location.protocol !== 'file:') {
-      addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+      addEventListener('load', () => navigator.serviceWorker.register('sw.js').then((r) => r.update()).catch(() => {}));
     }
   </script>
 </body>
