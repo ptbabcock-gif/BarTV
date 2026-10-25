@@ -68,6 +68,18 @@ form and the venue editor:
 "Near me" ranks located venues by haversine distance; the venue page offers a
 directions link that opens the device's maps app.
 
+## Finding places nearby
+
+"Find bars nearby" on the Map tab asks OpenStreetMap's Overpass API for named `amenity`
+nodes and ways (bar, pub, restaurant, cafe, nightclub, biergarten) within a chosen radius of
+the phone's position, or of the map centre when location is unavailable. Results are
+de-duplicated (a venue is often both a point and a building outline), sorted by distance and
+matched against rated venues (same normalised name within 200 m, or anything within 25 m) so
+scored places show their badge and the rest get a "Rate" button that prefills the form.
+Responses are cached for ten minutes per rounded location and radius, and queries only run
+on tap, to stay well inside the community servers' fair-use guidance. Swap `OVERPASS_URL` in
+`src/places.js` for another Overpass mirror or self-hosted instance if needed.
+
 ## Data model
 
 ```

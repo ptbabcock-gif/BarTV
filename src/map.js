@@ -103,7 +103,7 @@ export function createMap(container, opts = {}) {
       if (p.x < -60 || p.y < -60 || p.x > w + 60 || p.y > h + 60) continue;
       const el = document.createElement('button');
       el.type = 'button';
-      el.className = `cmap-pin tone-${m.tone || 'muted'}`;
+      el.className = `cmap-pin tone-${m.tone || 'muted'} ${m.cls || ''}`;
       el.style.transform = `translate(${p.x}px, ${p.y}px)`;
       el.setAttribute('aria-label', m.title || 'Venue');
       el.innerHTML = `<span class="cmap-pin-label">${m.label ?? ''}</span>`;

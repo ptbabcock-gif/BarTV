@@ -37,6 +37,7 @@
 
 /* ---------- Base ---------- */
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 html { -webkit-text-size-adjust: 100%; }
 body {
   margin: 0; background: var(--bg); color: var(--ink);
@@ -216,6 +217,13 @@ button.chip { min-height: 32px; }
 .lightbox-bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; max-width: 720px; margin-top: 12px; color: #fff; }
 .lightbox .btn { background: rgba(255,255,255,.12); color: #fff; border-color: rgba(255,255,255,.2); }
 .lightbox .btn.danger { color: #ff8a7a; }
+
+/* ---------- Discovered places ---------- */
+.cmap-pin.is-place { width: 30px; height: 30px; margin: -38px 0 0 -15px; border-style: dashed; border-width: 2px; color: var(--ink-3); }
+.cmap-pin.is-place .cmap-pin-label { font-size: .95rem; }
+.cmap-pin.is-place::after { border-top-color: var(--ink-3); bottom: -9px; }
+.place-ico { font-size: 1.3rem; width: 36px; text-align: center; flex: none; }
+a.score-badge { text-decoration: none; }
 
 /* ---------- Toast ---------- */
 #toast { position: fixed; left: 50%; bottom: calc(var(--tab-h) + 20px + env(safe-area-inset-bottom)); transform: translate(-50%, 20px); opacity: 0; pointer-events: none; z-index: 50; background: var(--ink); color: var(--bg); padding: 10px 16px; border-radius: 999px; font-weight: 600; font-size: .9rem; transition: all .2s ease; max-width: calc(100vw - 32px); }

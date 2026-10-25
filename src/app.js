@@ -8,6 +8,7 @@ import { sampleState } from './sample-data.js';
 import { CLOUD } from './config.js';
 import { createCloud } from './cloud.js';
 import { createSync, SYNC_STATUS } from './sync.js';
+import { fetchNearbyPlaces, sortByDistance, matchVenue, PLACE_KINDS } from './places.js';
 
 const store = createStore(localStorage);
 const cloud = createCloud({
@@ -361,16 +362,17 @@ function renderRate({ query, tastingId } = {}) {
   const editing = tastingId ? store.getTasting(tastingId) : null;
   if (tastingId && !editing) { location.hash = '#/rate'; return; }
   const presetVenue = editing ? store.getVenue(editing.venueId) : store.getVenue(params.get('venue') || '');
+  const place = !editing && !presetVenue && params.get('name') ? { name: params.get('name'), city: params.get('city') || '', address: params.get('address') || '', lat: Number(params.get('lat')), lng: Number(params.get('lng')) } : null;
   if (editing && sync.inGroup() && editing.userId && editing.userId !== sync.me()?.id) return renderTastingReadOnly(editing, presetVenue);
   setTitle(editing ? 'Edit tasting' : 'Rate a martini');
 
   const f = {
     venueId: presetVenue?.id || null,
-    name: presetVenue?.name || '',
-    city: presetVenue?.city || '',
-    address: presetVenue?.address || '',
-    lat: presetVenue?.lat ?? null,
-    lng: presetVenue?.lng ?? null,
+    name: presetVenue?.name || place?.name || '',
+    city: presetVenue?.city || place?.city || '',
+    address: presetVenue?.address || place?.address || '',
+    lat: presetVenue?.lat ?? (Number.isFinite(place?.lat) ? place.lat : null),
+    lng: presetVenue?.lng ?? (Number.isFinite(place?.lng) ? place.lng : null),
     date: editing?.date || todayISO(),
     price: editing?.price ?? '',
     scores: { ...(editing?.scores || {}) },
@@ -654,7 +656,13 @@ function renderMap() {
     <div class="map-panel" id="panel">
       ${located.length === 0 ? `<p class="muted small">${venues.length ? 'None of your venues has a map location yet. Open a venue, tap Edit and use “Use my location” or “Find address”.' : 'Rate a martini and set its location to see it here.'}</p>` : ''}
       ${unlocated > 0 && located.length ? `<p class="muted small">${unlocated} venue${unlocated > 1 ? 's' : ''} without a map location — <a href="#/venues">add one from the venue page</a>.</p>` : ''}
-      <form class="row" id="jump" style="margin-top:4px">
+      <div class="row" style="margin-top:4px">
+        <button type="button" class="btn primary grow" id="discover">Find bars nearby</button>
+        <select class="input" id="radius" style="width:auto" aria-label="Search radius"><option value="400">400 m</option><option value="800" selected>800 m</option><option value="2000">2 km</option></select>
+      </div>
+      <p class="muted small" id="discover-msg" style="margin:6px 0 0"></p>
+      <div id="places"></div>
+      <form class="row" id="jump" style="margin-top:10px">
         <input class="input grow" id="jump-q" placeholder="Jump to a city or address" aria-label="Jump to a city or address" autocomplete="off">
         <button class="btn sm" type="submit">Go</button>
       </form>
@@ -664,15 +672,23 @@ function renderMap() {
 
   const map = createMap(qs('#map'), {
     onMarkerClick: (m) => {
-      const r = located.find((x) => x.venue.id === m.id);
       const sheet = qs('#sheet');
       sheet.hidden = false;
-      sheet.innerHTML = venueCard(r, '<button type="button" class="btn sm ghost" id="sheet-close" aria-label="Close">✕</button>');
+      const r = located.find((x) => x.venue.id === m.id);
+      if (r) sheet.innerHTML = venueCard(r, '<button type="button" class="btn sm ghost" id="sheet-close" aria-label="Close">✕</button>');
+      else {
+        const p = foundPlaces.find((x) => x.id === m.id);
+        if (!p) return;
+        sheet.innerHTML = `<div class="card"><div class="row between"><div class="grow"><strong>${esc(p.name)}</strong><div class="muted small">${esc(PLACE_KINDS[p.kind].label)}${p.km != null ? ` · ${formatDistance(p.km)}` : ''}${p.address ? ` · ${esc(p.address)}` : ''}</div>${p.hours ? `<div class="muted small">Hours: ${esc(p.hours)}</div>` : ''}</div><button type="button" class="btn sm ghost" id="sheet-close" aria-label="Close">✕</button></div><div class="row" style="margin-top:10px"><a class="btn primary grow" href="${rateHref(p)}">Rate here</a><a class="btn" target="_blank" rel="noopener" href="https://www.google.com/maps/dir/?api=1&destination=${p.lat},${p.lng}">Directions</a></div></div>`;
+      }
       qs('#sheet-close').addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); sheet.hidden = true; });
     },
     onMoveEnd: (v) => { mapMemory = v; },
   });
-  map.setMarkers(located.map((r) => ({ id: r.venue.id, lat: r.venue.lat, lng: r.venue.lng, label: fmtScore(r.stats.avg), tone: grade(r.stats.avg).tone, title: `${r.venue.name} · ${fmtScore(r.stats.avg)}` })));
+  const venueMarkers = located.map((r) => ({ id: r.venue.id, lat: r.venue.lat, lng: r.venue.lng, label: fmtScore(r.stats.avg), tone: grade(r.stats.avg).tone, title: `${r.venue.name} · ${fmtScore(r.stats.avg)}` }));
+  let placeMarkers = [];
+  let foundPlaces = [];
+  map.setMarkers(venueMarkers);
   if (mapMemory) map.setView(mapMemory.center, mapMemory.zoom);
   else map.fit(located.map((r) => r.venue));
   if (lastPosition) { map.setUserLocation(lastPosition); drawNear(lastPosition); }
@@ -692,6 +708,38 @@ function renderMap() {
     } catch (err) { toast(err.message); }
     b.disabled = false; b.textContent = '◎ Near me';
   });
+  // --- discover unrated places from OpenStreetMap ---
+  const rateHref = (p) => `#/rate?${new URLSearchParams({ name: p.name, city: p.city || '', address: p.address || '', lat: p.lat, lng: p.lng })}`;
+  qs('#discover').addEventListener('click', async () => {
+    const btn = qs('#discover'); const msg = qs('#discover-msg'); const out = qs('#places');
+    const origin = lastPosition || map.getView().center;
+    const radius = Number(qs('#radius').value);
+    btn.disabled = true; btn.textContent = 'Searching…'; msg.textContent = '';
+    try {
+      const raw = await fetchNearbyPlaces({ lat: origin.lat, lng: origin.lng, radius });
+      foundPlaces = sortByDistance(raw, origin).map((p) => ({ ...p, venue: matchVenue(p, located.map((r) => r.venue)) }));
+      const unrated = foundPlaces.filter((p) => !p.venue);
+      placeMarkers = unrated.map((p) => ({ id: p.id, lat: p.lat, lng: p.lng, label: PLACE_KINDS[p.kind].icon, tone: 'muted', cls: 'is-place', title: p.name }));
+      map.setMarkers([...venueMarkers, ...placeMarkers]);
+      if (!lastPosition) map.setView(origin, Math.max(map.getView().zoom, 15)); else map.setView(origin, radius <= 400 ? 16 : radius <= 800 ? 15 : 14);
+      msg.textContent = foundPlaces.length
+        ? `${foundPlaces.length} places within ${radius >= 1000 ? (radius / 1000) + ' km' : radius + ' m'}${lastPosition ? ' of you' : ' of the map centre'} · ${unrated.length} not rated yet`
+        : 'Nothing found here. Try a wider radius or move the map.';
+      out.innerHTML = foundPlaces.length ? `<div class="stack" style="margin-top:8px">${foundPlaces.slice(0, 40).map((p) => `
+        <div class="card row place">
+          <span class="place-ico" aria-hidden="true">${PLACE_KINDS[p.kind].icon}</span>
+          <div class="grow">
+            <strong class="ellipsis">${esc(p.name)}</strong>
+            <div class="muted small ellipsis">${esc(PLACE_KINDS[p.kind].label)} · ${formatDistance(p.km)}${p.address ? ` · ${esc(p.address)}` : ''}</div>
+          </div>
+          ${p.venue ? `<a class="score-badge sm tone-${grade(aggregate(store.tastingsForVenue(p.venue.id)).avg).tone}" href="#/venue/${esc(p.venue.id)}" title="Rated">${fmtScore(aggregate(store.tastingsForVenue(p.venue.id)).avg)}</a>` : `<a class="btn sm" href="${rateHref(p)}">Rate</a>`}
+        </div>`).join('')}</div>` : '';
+    } catch (err) {
+      msg.textContent = `${err.message}. Finding places needs an internet connection.`;
+    }
+    btn.disabled = false; btn.textContent = 'Find bars nearby';
+  });
+
   qs('#jump').addEventListener('submit', async (e) => {
     e.preventDefault();
     const msg = qs('#jump-msg');

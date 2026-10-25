@@ -20,6 +20,10 @@ it works offline (map tiles and address search need a connection).
   OpenStreetMap map. Set a venue's location from the device GPS or by address search
   (Nominatim). "Near me" lists the closest rated venues with distances, and venue pages
   link straight to directions.
+- **Find bars nearby** — one tap on the Map tab queries OpenStreetMap for bars, pubs,
+  restaurants and cafes around you (or around the map centre), shows unrated ones as hollow
+  pins and a distance-sorted list, flags the ones your group has already scored, and "Rate
+  here" opens the form with name, address and location filled in. No API key needed.
 - **Venues leaderboard** with search and sort (top rated, most visited, recent,
   cheapest, A–Z), venue pages with per-criterion breakdown, most-common build, and
   full tasting history.
@@ -68,6 +72,7 @@ src/scoring.js          rubric, overall score, aggregates, ranking   (pure)
 src/ingredients.js      ingredient model and insights               (pure)
 src/store.js            persistence, validation, import/export      (pure, Storage-agnostic)
 src/geo.js              haversine, Web Mercator tile math, geocoding (pure)
+src/places.js           nearby-places discovery via OpenStreetMap Overpass (pure + fetch)
 src/map.js              dependency-free slippy map (tiles, pan, pinch, pins)
 src/ui.js               DOM/format helpers
 src/sample-data.js      demo venues and tastings
@@ -84,7 +89,8 @@ docs/DESIGN.md          design rationale, data model, scoring maths
 docs/GROUPS.md          group setup and how sync works
 ```
 
-Map data © OpenStreetMap contributors. Please respect the
+Map data and place listings © OpenStreetMap contributors. Please respect the
+[Overpass API usage guidance](https://wiki.openstreetmap.org/wiki/Overpass_API),
 [OSM tile usage policy](https://operations.osmfoundation.org/policies/tiles/) and
 [Nominatim usage policy](https://operations.osmfoundation.org/policies/nominatim/) if you
 deploy this for more than personal use; swap `OSM_TILE_URL` in `src/map.js` for your own

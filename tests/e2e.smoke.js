@@ -84,6 +84,37 @@ try {
   await page.click('.cmap-btn[data-act="in"]');
   assert.ok(await page.evaluate(() => document.querySelectorAll('.cmap-tile').length) > 0 && z0 > 0);
 
+  // Discover nearby bars from OpenStreetMap (stubbed)
+  await ctx.route('https://overpass-api.de/**', (r) => r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ elements: [
+    { type: 'node', id: 1, lat: 51.5134, lon: -0.1316, tags: { amenity: 'bar', name: 'Bar Termini', 'addr:city': 'London' } },
+    { type: 'node', id: 2, lat: 51.5140, lon: -0.1335, tags: { amenity: 'bar', name: 'Swift', 'addr:housenumber': '12', 'addr:street': 'Old Compton Street', 'addr:city': 'London', opening_hours: 'Mo-Su 15:00-01:00' } },
+    { type: 'way', id: 3, center: { lat: 51.5125, lon: -0.1350 }, tags: { amenity: 'pub', name: 'The French House' } },
+  ] }) }));
+  await page.click('#discover');
+  await page.waitForSelector('.place');
+  assert.equal(await page.locator('.place').count(), 3);
+  assert.match(await page.textContent('#discover-msg'), /3 places .* 2 not rated yet/);
+  assert.equal(await page.locator('.cmap-pin.is-place').count(), 2, 'unrated places get hollow pins');
+  assert.equal(await page.locator('.place:has-text("Bar Termini") a.score-badge').count(), 1, 'rated place shows its score');
+  await shot('04b-discover');
+  await page.locator('.cmap-pin.is-place').first().click();
+  await page.waitForSelector('#sheet:not([hidden]) a:has-text("Rate here")');
+  await page.click('#sheet-close');
+  await page.click('.place:has-text("Swift") a:has-text("Rate")');
+  await page.waitForSelector('#rate');
+  assert.equal(await page.inputValue('#f-name'), 'Swift');
+  assert.equal(await page.inputValue('#f-city'), 'London');
+  assert.match(await page.textContent('#loc'), /12 Old Compton Street/);
+  await page.click('.criterion[data-key="foam"] button[data-n="4"]');
+  await page.click('#save');
+  await page.waitForSelector('.score-badge.lg');
+  assert.equal(await page.locator('a:has-text("Directions")').count(), 1, 'discovered place is saved with coordinates');
+  page.once('dialog', (d) => d.accept());
+  await page.click('a:has-text("Edit")');
+  await page.waitForSelector('#delete');
+  await page.click('#delete');
+  await page.waitForSelector('#list .card');
+
   // Rate a new venue end to end
   await page.click('.tabbar a[data-tab="rate"]');
   await page.waitForSelector('#rate');
