@@ -4,6 +4,6 @@
 // is what protects the data. Leave both empty to run the app in solo (device-only) mode.
 export const CLOUD = globalThis.__CHEERS_CLOUD__ || {
   url: '',
-  anonKey: '',
+  anonKey: 'sb_publishable_LpUhHMpF8CskjBsW75GnKA_SHPsfa67',
 };
 // `globalThis.__CHEERS_CLOUD__` is an override hook used by the browser tests.
